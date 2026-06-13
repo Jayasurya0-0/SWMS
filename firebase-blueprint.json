@@ -1,0 +1,311 @@
+{
+  "entities": {
+    "SystemSettings": {
+      "title": "System Settings",
+      "description": "Global application configuration settings, system dates, target KPIs, and state defaults.",
+      "type": "object",
+      "properties": {
+        "systemDate": { "type": "string", "description": "Current active system tracking date (YYYY-MM-DD)." },
+        "overallTarget": { "type": "number", "description": "Target output pieces for the entire factory today." },
+        "overallActual": { "type": "number", "description": "Calculated actual pieces produced today." },
+        "theme": { "type": "string", "enum": ["light", "dark"], "description": "Global layout user interface visual theme." },
+        "lockedLines": { "type": "array", "description": "List of production line numbers currently locked from reallocations." }
+      },
+      "required": ["systemDate", "overallTarget", "overallActual", "theme"]
+    },
+    "Employee": {
+      "title": "Employee Master",
+      "description": "Standard operator and factory worker core database registries.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique Alphanumeric Operator ID." },
+        "name": { "type": "string", "description": "Full Human Name." },
+        "photoUrl": { "type": "string", "description": "Profile avatar image asset URL." },
+        "department": { "type": "string", "description": "Factory operational department (e.g., Sewing, QA, Cutting)." },
+        "section": { "type": "string", "description": "Factory section (e.g., Main Line, Packing)." },
+        "lineNumber": { "type": "number", "description": "Assigned base production line number. 0 for offline/support, 99 for Floater pool." },
+        "designation": { "type": "string", "description": "Official job title/designation." },
+        "joiningDate": { "type": "string", "description": "Employment date (YYYY-MM-DD)." },
+        "skillCategory": { "type": "string", "description": "Assigned skill competency grade." },
+        "experience": { "type": "number", "description": "Operational experience in years." },
+        "contactNumber": { "type": "string", "description": "Standard contact telephone number." },
+        "baseEfficiency": { "type": "number", "description": "Average pieces/sewing productivity percentage rate." },
+        "historicalAttendanceRate": { "type": "number", "description": "Attendance reliability index rating." },
+        "riskScore": { "type": "number", "description": "Predictive threat of absenteeism risk score." },
+        "riskLevel": { "type": "string", "description": "Predictive threat risk classification level." },
+        "productionWorkforceEligible": { "type": "boolean", "description": "Whether worker is eligible for active line assignment duties." }
+      },
+      "required": ["id", "name", "department", "lineNumber", "skillCategory"]
+    },
+    "Attendance": {
+      "title": "Attendance Record",
+      "description": "Clocked in/out operator attendance markers.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "date": { "type": "string" },
+        "status": { "type": "string", "enum": ["Present", "Absent", "Leave", "Late"] },
+        "checkInTime": { "type": "string" },
+        "checkOutTime": { "type": "string" },
+        "method": { "type": "string", "enum": ["Manual", "QR Code", "Biometric", "RFID"] },
+        "markedBy": { "type": "string" },
+        "markedAt": { "type": "string" }
+      },
+      "required": ["id", "employeeId", "date", "status", "method", "markedBy", "markedAt"]
+    },
+    "LeaveRequest": {
+      "title": "Leave Record",
+      "description": "Submitted operator leaves and supervisor/HR audit approvals.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "leaveType": { "type": "string", "enum": ["Casual", "Sick", "Emergency", "Earned"] },
+        "startDate": { "type": "string" },
+        "endDate": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "requestedDate": { "type": "string" },
+        "approvedBySupervisor": { "type": "string" },
+        "approvedByHR": { "type": "string" },
+        "comments": { "type": "string" }
+      },
+      "required": ["id", "employeeId", "leaveType", "startDate", "endDate", "status", "requestedDate"]
+    },
+    "ProductionLine": {
+      "title": "Production Line Config",
+      "description": "Active production assembly line performance metrics, supervisor assignments, and targets.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Sequential line identifier (e.g. 1, 2, 3)." },
+        "supervisor": { "type": "string" },
+        "targetQuantity": { "type": "number" },
+        "actualQuantity": { "type": "number" },
+        "requiredManpower": { "type": "number" },
+        "availableManpower": { "type": "number" },
+        "targetEfficiency": { "type": "number" },
+        "baseEfficiency": { "type": "number" },
+        "bottleneckOperation": { "type": "string" },
+        "status": { "type": "string", "enum": ["Running", "Understaffed", "Critical"] }
+      },
+      "required": ["id", "supervisor", "targetQuantity", "actualQuantity"]
+    },
+    "AppNotification": {
+      "title": "Application Notification",
+      "description": "Workspace alerts, milestones, and workforce shortage notices.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["Alert", "Leave", "Milestone", "Shortage"] },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["id", "type", "title", "message", "timestamp", "read"]
+    },
+    "LineAllocation": {
+      "title": "IE Line Allocation",
+      "description": "Industrial engineer permanent master workstation assignments.",
+      "type": "object",
+      "properties": {
+        "employeeId": { "type": "string" },
+        "employeeName": { "type": "string" },
+        "department": { "type": "string" },
+        "assignedLine": { "type": "number" },
+        "assignmentStatus": { "type": "string" },
+        "remarks": { "type": "string" },
+        "assignedOperation": { "type": "string" }
+      },
+      "required": ["employeeId", "employeeName", "assignedLine", "assignedOperation"]
+    },
+    "EmployeeAssignment": {
+      "title": "Active Shift Deployment Assignment",
+      "description": "Dynamic daily supervisor allocations and operation-level coverage deployment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "employeeId": { "type": "string" },
+        "assignmentDate": { "type": "string" },
+        "assignedLine": { "type": "number" },
+        "assignedOperation": { "type": "string" },
+        "assignmentStatus": { "type": "string" },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "assignedBy": { "type": "string" },
+        "availabilityFlag": { "type": "boolean" },
+        "department": { "type": "string" },
+        "assignmentSource": { "type": "string" }
+      },
+      "required": ["id", "employeeId", "assignmentDate", "assignedLine", "assignedOperation", "assignmentStatus"]
+    },
+    "FactoryDepartment": {
+      "title": "Factory Department Library",
+      "description": "Departments in the sewing factory system.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "supervisor": { "type": "string" },
+        "totalEmployees": { "type": "number" },
+        "status": { "type": "string", "enum": ["Active", "Inactive"] }
+      },
+      "required": ["id", "name", "supervisor", "status"]
+    },
+    "FactoryOperation": {
+      "title": "Factory Operation Library",
+      "description": "Standard sewing operations list.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "name": { "type": "string" },
+        "departmentId": { "type": "string" },
+        "skillCategory": { "type": "string" },
+        "smv": { "type": "number" },
+        "machineType": { "type": "string" },
+        "targetEfficiency": { "type": "number" },
+        "minSkillLevel": { "type": "string" },
+        "status": { "type": "string", "enum": ["Active", "Inactive"] }
+      },
+      "required": ["code", "name", "departmentId", "skillCategory", "smv", "machineType", "minSkillLevel", "status"]
+    },
+    "GarmentStyle": {
+      "title": "Garment Style Bulletin",
+      "description": "Style operation sequences, time targets (SMV) and engineering specs.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "smv": { "type": "number" },
+        "requiredManpower": { "type": "number" },
+        "estimatedManpower": { "type": "number" },
+        "description": { "type": "string" },
+        "version": { "type": "string" },
+        "isArchived": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["Active", "Inactive"] },
+        "operations": { "type": "array" },
+        "linesAllocated": { "type": "array" },
+        "createdAt": { "type": "string" },
+        "lastModifiedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "type", "smv", "status", "operations", "linesAllocated"]
+    },
+    "LineStyleAssignment": {
+      "title": "Line Style Assignment",
+      "description": "Active garment style mapping assignments assigned to active production lines.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lineNumber": { "type": "number" },
+        "garmentStyleId": { "type": "string" },
+        "assignedAt": { "type": "string" },
+        "effectiveDate": { "type": "string" },
+        "effectiveTime": { "type": "string" },
+        "remarks": { "type": "string" }
+      },
+      "required": ["id", "lineNumber", "garmentStyleId", "assignedAt", "effectiveDate", "effectiveTime"]
+    },
+    "GarmentStyleHistory": {
+      "title": "Garment Style Historical Record",
+      "description": "Permanent trace records tracking style allocations shifts over sewing lines.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "lineNumber": { "type": "number" },
+        "previousGarmentStyleId": { "type": "string" },
+        "previousGarmentStyleName": { "type": "string" },
+        "newGarmentStyleId": { "type": "string" },
+        "newGarmentStyleName": { "type": "string" },
+        "changeDate": { "type": "string" },
+        "changeTime": { "type": "string" },
+        "changedBy": { "type": "string" },
+        "reason": { "type": "string" },
+        "operatorsCount": { "type": "number" },
+        "remarks": { "type": "string" }
+      },
+      "required": ["id", "lineNumber", "newGarmentStyleId", "newGarmentStyleName", "changeDate", "changeTime", "changedBy", "reason", "operatorsCount"]
+    },
+    "UserAccount": {
+      "title": "User Authentication Account",
+      "description": "System access login profiles and credentials with Role-Based Access Control (RBAC).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique user profile ID key." },
+        "employeeId": { "type": "string", "description": "Optional mapped Employee Master ID registration." },
+        "employeeName": { "type": "string", "description": "Full display human name." },
+        "username": { "type": "string", "description": "System unique security login username name string." },
+        "email": { "type": "string", "description": "Corporate corporate email identifier." },
+        "role": { "type": "string", "description": "Role-Based Access Control authorization clearance level." },
+        "department": { "type": "string", "description": "Assigned organizational department grouping." },
+        "designation": { "type": "string", "description": "Workspace designation roster title." },
+        "passwordHash": { "type": "string", "description": "Secure SHA-256 password digest hash." },
+        "accountStatus": { "type": "string", "enum": ["Active", "Inactive"], "description": "Current status lock definition." },
+        "failedAttempts": { "type": "number", "description": "Consecutive incorrect login attempts tracking." },
+        "lockedUntil": { "type": "string", "description": "Timed lock timestamp lock (YYYY-MM-DDTHH:mm:ss.sssZ or null)." },
+        "lastLogin": { "type": "string", "description": "Last authenticated workspace session timestamp." },
+        "avatarUrl": { "type": "string", "description": "Optional profile photo vector avatar asset link." }
+      },
+      "required": ["id", "username", "email", "role", "passwordHash", "accountStatus"]
+    }
+  },
+  "firestore": {
+    "settings": {
+      "schema": "SystemSettings",
+      "description": "Collection storing global production system environment state settings."
+    },
+    "employees": {
+      "schema": "Employee",
+      "description": "Master folder container of active factory workers registers."
+    },
+    "attendance": {
+      "schema": "Attendance",
+      "description": "Clocking records for daily worker presence rosters."
+    },
+    "leaveRequests": {
+      "schema": "LeaveRequest",
+      "description": "Rosters request records tracking planned employee leaves."
+    },
+    "productionLines": {
+      "schema": "ProductionLine",
+      "description": "Assembly configurations and efficiency ratings of manufacturing stages."
+    },
+    "notifications": {
+      "schema": "AppNotification",
+      "description": "Central visual messages and warnings broadcasts."
+    },
+    "lineAllocations": {
+      "schema": "LineAllocation",
+      "description": "Industrial engineering base setups of standard workstation assignments."
+    },
+    "employeeAssignments": {
+      "schema": "EmployeeAssignment",
+      "description": "Active daily workforce deployment registers."
+    },
+    "departments": {
+      "schema": "FactoryDepartment",
+      "description": "The general factory organizational modules catalog."
+    },
+    "operations": {
+      "schema": "FactoryOperation",
+      "description": "Skill operation database for lines configurations."
+    },
+    "garmentStyles": {
+      "schema": "GarmentStyle",
+      "description": "Manufacturing style operation time sheets and sequence maps."
+    },
+    "lineStyleAssignments": {
+      "schema": "LineStyleAssignment",
+      "description": "Direct active style mappings per sewing line."
+    },
+    "garmentStyleHistory": {
+      "schema": "GarmentStyleHistory",
+      "description": "Permanent historical tracing logs monitoring sewing allocations over schedules."
+    },
+    "allUsers": {
+      "schema": "UserAccount",
+      "description": "Collection storing Role-Based login profiles for authenticated factory workspace sessions."
+    }
+  }
+}

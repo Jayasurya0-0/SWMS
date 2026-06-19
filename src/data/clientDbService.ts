@@ -137,6 +137,7 @@ export interface ClientDatabase {
   garmentStyleHistory: GarmentStyleHistory[];
   auditLogs: AuditLogEntry[];
   sessions?: any[];
+  uploadedDates?: string[];
 }
 
 export function getInitialClientDb(): ClientDatabase {
@@ -406,45 +407,86 @@ export async function syncFromFirestoreIfNeeded() {
     isFirestoreFetching = true;
     firestoreFetchPromise = (async () => {
       try {
-        const docRef = doc(firestoreDb, 'swm_shared', 'global_database');
-        const docSnap = await getDoc(docRef);
+        // Fetch Settings doc from the exact same path that server.ts / dbService.ts uses
+        const globalDocRef = doc(firestoreDb, 'settings', 'global');
+        const docSnap = await getDoc(globalDocRef);
         let remoteDb: any = null;
+        
         if (docSnap.exists()) {
-          remoteDb = docSnap.data() as ClientDatabase;
+          const settings = docSnap.data();
+          remoteDb = {
+            systemDate: settings.systemDate || '2026-06-04',
+            overallTarget: settings.overallTarget || 6000,
+            overallActual: settings.overallActual || 0,
+            theme: settings.theme || 'light',
+            currentUser: settings.currentUser || null,
+            allUsers: [],
+            lockedLines: settings.lockedLines || [],
+            uploadedDates: settings.uploadedDates || ['2026-06-04'],
+            currentGarment: settings.currentGarment || null,
+            employees: [],
+            attendance: [],
+            leaveRequests: [],
+            productionLines: [],
+            notifications: [],
+            dailyProductivity: [],
+            lineAllocations: [],
+            employeeAssignments: [],
+            departments: [],
+            operations: [],
+            garmentStyles: [],
+            lineStyleAssignments: [],
+            garmentStyleHistory: [],
+            auditLogs: [],
+            sessions: []
+          };
         } else {
-          remoteDb = getInitialClientDb();
+          // If the global settings does not exist in standard settings/global path, try the legacy document first
+          const legacyDocRef = doc(firestoreDb, 'swm_shared', 'global_database');
+          const legacySnap = await getDoc(legacyDocRef);
+          if (legacySnap.exists()) {
+            remoteDb = legacySnap.data() as ClientDatabase;
+            console.log("[syncFromFirestoreIfNeeded] Found legacy global_database. Transforming layout.");
+          } else {
+            remoteDb = getInitialClientDb();
+          }
         }
 
         if (remoteDb) {
-          // Explicitly query and merge separate 'allUsers' collection to catch manual additions
-          try {
-            const usersColRef = collection(firestoreDb, 'allUsers');
-            const usersSnap = await getDocs(usersColRef);
-            if (!usersSnap.empty) {
-              const liveUsers: UserAccount[] = [];
-              usersSnap.forEach((uDoc: any) => {
-                const uData = uDoc.data();
-                if (uData && uData.username) {
-                  liveUsers.push(uData as UserAccount);
-                }
-              });
-              
-              if (liveUsers.length > 0) {
-                const mergedUsers = [...liveUsers];
-                // Keep any unique users from the monolithic swm_shared database that aren't yet in allUsers
-                (remoteDb.allUsers || []).forEach((u: any) => {
-                  if (!mergedUsers.some(mu => mu.id === u.id || mu.username.toLowerCase() === u.username.toLowerCase())) {
-                    mergedUsers.push(u);
-                  }
-                });
-                remoteDb.allUsers = mergedUsers;
-              }
-            }
-          } catch (usersErr) {
-            console.warn("Client database sync could not retrieve separate allUsers collection:", usersErr);
-          }
+          // Fetch all discrete collections in parallel, exactly like dbService.ts does
+          const colNames = [
+            'employees',
+            'attendance',
+            'leaveRequests',
+            'productionLines',
+            'notifications',
+            'dailyProductivity',
+            'lineAllocations',
+            'employeeAssignments',
+            'departments',
+            'operations',
+            'garmentStyles',
+            'lineStyleAssignments',
+            'garmentStyleHistory',
+            'auditLogs',
+            'allUsers',
+            'sessions'
+          ];
 
-          // Retain local context (currentUser and theme) to avoid session kick outs
+          await Promise.all(colNames.map(async (colName) => {
+            try {
+              const colRef = collection(firestoreDb!, colName);
+              const snap = await getDocs(colRef);
+              if (!snap.empty) {
+                const items = snap.docs.map(uDoc => uDoc.data());
+                remoteDb[colName] = items;
+              }
+            } catch (err) {
+              console.warn(`Could not sync collection "${colName}" from Firestore:`, err);
+            }
+          }));
+
+          // Retain local context (currentUser and theme) to avoid session kick outs in this browser session
           let localCurrentUser = null;
           let localTheme: 'light' | 'dark' = 'light';
           const rawLocal = localStorage.getItem('swm_client_db');
@@ -457,12 +499,16 @@ export async function syncFromFirestoreIfNeeded() {
               // ignore
             }
           }
-          remoteDb.currentUser = localCurrentUser;
-          remoteDb.theme = localTheme;
+          if (localCurrentUser) {
+            remoteDb.currentUser = localCurrentUser;
+          }
+          if (localTheme) {
+            remoteDb.theme = localTheme;
+          }
 
           localStorage.setItem('swm_client_db', JSON.stringify(remoteDb));
           lastFirestoreFetchTime = Date.now();
-          console.log("Client database successfully synced with Firestore cloud (including live allUsers mapping).");
+          console.log("Client database successfully synced with real discrete Firestore collections.");
         }
       } catch (err) {
         console.warn("Firestore data sync warning:", err);
@@ -509,26 +555,67 @@ export function saveClientDb(db: ClientDatabase) {
     
     // Back up to Firebase Firestore asynchronously
     if (firestoreDb) {
-      const docRef = doc(firestoreDb, 'swm_shared', 'global_database');
-      setDoc(docRef, db)
-        .then(() => {
-          console.log("Successfully back-propagated client database changes to Firestore.");
-        })
-        .catch(err => {
-          console.error("Failed to back-propagate changes to Firestore:", err);
-        });
+      // 1. Save Settings
+      const currentSettings = {
+        systemDate: db.systemDate || '2026-06-04',
+        overallTarget: db.overallTarget || 6000,
+        overallActual: db.overallActual || 0,
+        theme: db.theme || 'light',
+        currentUser: db.currentUser || null,
+        lockedLines: db.lockedLines || [],
+        uploadedDates: db.uploadedDates || ['2026-06-04'],
+        currentGarment: db.currentGarment || null
+      };
 
-      // Synchronize each user as a separate document in the discrete 'allUsers' collection
-      if (db.allUsers && Array.isArray(db.allUsers)) {
-        db.allUsers.forEach((usr: any) => {
-          if (usr && usr.id) {
-            const userDocRef = doc(firestoreDb, 'allUsers', usr.id);
-            setDoc(userDocRef, usr).catch(err => {
-              console.error(`Failed to propagate user ${usr.username} to separate 'allUsers' collection:`, err);
-            });
-          }
-        });
-      }
+      const globalDocRef = doc(firestoreDb, 'settings', 'global');
+      setDoc(globalDocRef, currentSettings).catch(err => {
+        console.error("Failed to save settings/global in firestore:", err);
+      });
+
+      // Maintain legacy global document sync as well, just in case
+      const legacyDocRef = doc(firestoreDb, 'swm_shared', 'global_database');
+      setDoc(legacyDocRef, db).catch(err => {
+        console.error("Failed to save legacy global_database document:", err);
+      });
+
+      // 2. Write to each individual collection!
+      const colsToSync = [
+        { name: 'employees', getter: (item: any) => item.id.toUpperCase() },
+        { name: 'attendance', getter: (item: any) => item.id || `att_${item.employeeId}_${item.date}` },
+        { name: 'leaveRequests', getter: (item: any) => item.id },
+        { name: 'productionLines', getter: (item: any) => String(item.id) },
+        { name: 'notifications', getter: (item: any) => item.id },
+        { name: 'dailyProductivity', getter: (item: any) => item.id },
+        { name: 'lineAllocations', getter: (item: any) => item.employeeId.toUpperCase() },
+        { name: 'employeeAssignments', getter: (item: any) => item.id || `asgn_${item.employeeId}_${item.assignmentDate}` },
+        { name: 'departments', getter: (item: any) => item.id },
+        { name: 'operations', getter: (item: any) => item.code },
+        { name: 'garmentStyles', getter: (item: any) => item.id },
+        { name: 'lineStyleAssignments', getter: (item: any) => item.id },
+        { name: 'garmentStyleHistory', getter: (item: any) => item.id },
+        { name: 'auditLogs', getter: (item: any) => item.id },
+        { name: 'allUsers', getter: (item: any) => item.id },
+        { name: 'sessions', getter: (item: any) => item.id }
+      ];
+
+      colsToSync.forEach(col => {
+        const items = (db as any)[col.name];
+        if (items && Array.isArray(items)) {
+          items.forEach(item => {
+            try {
+              const docId = col.getter(item);
+              if (docId) {
+                const itemDocRef = doc(firestoreDb!, col.name, docId);
+                setDoc(itemDocRef, item).catch(err => {
+                  console.error(`Failed to propagate item to separate collection ${col.name}/${docId}:`, err);
+                });
+              }
+            } catch (e) {
+              console.error(`Error mapping document key for ${col.name}:`, e);
+            }
+          });
+        }
+      });
     }
   }
 }

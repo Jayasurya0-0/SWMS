@@ -1,0 +1,8 @@
+{
+  "name": "SWM",
+  "description": "Reducing Absenteeism. Increasing Productivity. Empowering Manufacturing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

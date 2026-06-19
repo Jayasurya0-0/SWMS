@@ -760,6 +760,7 @@ export async function initializeFirestoreDb(): Promise<void> {
         if (dbInMemory) {
           ensureDefectRates(dbInMemory);
           ensureUserAccountsSecurity(dbInMemory);
+          lastSyncedState = JSON.parse(JSON.stringify(dbInMemory));
           saveDb();
         }
       }
@@ -775,17 +776,22 @@ export async function initializeFirestoreDb(): Promise<void> {
       dbInMemory = remoteData;
       ensureDefectRates(dbInMemory);
       ensureUserAccountsSecurity(dbInMemory);
+      lastSyncedState = JSON.parse(JSON.stringify(dbInMemory));
       // Mirror locally for fallback cache and sync to Firestore
       saveDb();
     } else {
       console.log("No data found on remote Firestore. Initializing primary seed...");
       const baseDb = getDb(); // Triggers standard fallback seeding to memory
+      lastSyncedState = JSON.parse(JSON.stringify(baseDb));
       await seedToFirestore(baseDb);
     }
   } catch (err) {
     console.error("Failed to connect to active Firestore instance. Utilizing local fallback channel. Error:", err);
     // Graceful fallback: initialize local in-memoryDB
     getDb();
+    if (dbInMemory) {
+      lastSyncedState = JSON.parse(JSON.stringify(dbInMemory));
+    }
   }
 }
 
@@ -1156,4 +1162,31 @@ export function getCachedProductivity(calculator: () => any): any {
   if (productivityCache) return productivityCache;
   productivityCache = calculator();
   return productivityCache;
+}
+
+let lastServerFetchTime = 0;
+let isServerFetching = false;
+
+export async function syncServerFromFirestoreIfNeeded(): Promise<void> {
+  const now = Date.now();
+  // Retrieve settings/all collections from Firestore every 3 seconds to keep other containers/tabs up to date
+  if (now - lastServerFetchTime > 3000 && !isServerFetching) {
+    isServerFetching = true;
+    try {
+      const remoteData = await loadFromFirestore();
+      if (remoteData) {
+        dbInMemory = remoteData;
+        ensureDefectRates(dbInMemory);
+        ensureUserAccountsSecurity(dbInMemory);
+        fs.writeFileSync(DB_PATH, JSON.stringify(dbInMemory, null, 2), 'utf-8');
+        lastSyncedState = JSON.parse(JSON.stringify(remoteData));
+        lastServerFetchTime = Date.now();
+        console.log("Server dbInMemory successfully synced with Firestore.");
+      }
+    } catch (err) {
+      console.warn("syncServerFromFirestoreIfNeeded error:", err);
+    } finally {
+      isServerFetching = false;
+    }
+  }
 }

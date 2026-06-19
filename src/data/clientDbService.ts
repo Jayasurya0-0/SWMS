@@ -17,7 +17,7 @@ import {
 } from './mockData';
 
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize client-side Firebase instance for shared cloud persistence
@@ -749,6 +749,11 @@ export async function handleMockRequest(urlStr: string, init?: RequestInit): Pro
       } else if (method === 'DELETE') {
         db.employees = db.employees.filter(e => e.id.toUpperCase() !== empId.toUpperCase());
         saveClientDb(db);
+        if (firestoreDb) {
+          deleteDoc(doc(firestoreDb, 'employees', empId.toUpperCase())).catch(err => {
+            console.error("Failed to delete employee from Firestore:", err);
+          });
+        }
         responseData = { success: true };
       } else if (method === 'POST') {
         if (pathname.includes('bulk-update')) {
@@ -829,8 +834,15 @@ export async function handleMockRequest(urlStr: string, init?: RequestInit): Pro
         responseData = db.productionLines;
       } else {
         const line = body as ProductionLine;
-        line.id = line.id || db.productionLines.length + 1;
-        db.productionLines.push(line);
+        if (line.id === undefined) {
+          line.id = db.productionLines.length + 1;
+        }
+        const idx = db.productionLines.findIndex(l => l.id === line.id);
+        if (idx !== -1) {
+          db.productionLines[idx] = { ...db.productionLines[idx], ...line };
+        } else {
+          db.productionLines.push(line);
+        }
         saveClientDb(db);
         responseData = line;
       }
@@ -841,6 +853,11 @@ export async function handleMockRequest(urlStr: string, init?: RequestInit): Pro
       if (method === 'DELETE') {
         db.productionLines = db.productionLines.filter(l => l.id !== lineId);
         saveClientDb(db);
+        if (firestoreDb) {
+          deleteDoc(doc(firestoreDb, 'productionLines', String(lineId))).catch(err => {
+            console.error("Failed to delete production line from Firestore:", err);
+          });
+        }
         responseData = { success: true };
       }
     } 
@@ -859,7 +876,12 @@ export async function handleMockRequest(urlStr: string, init?: RequestInit): Pro
       } else {
         const style = body as GarmentStyle;
         style.id = style.id || `STYLE_${Date.now()}`;
-        db.garmentStyles.push(style);
+        const idx = db.garmentStyles.findIndex(s => s.id === style.id);
+        if (idx !== -1) {
+          db.garmentStyles[idx] = { ...db.garmentStyles[idx], ...style };
+        } else {
+          db.garmentStyles.push(style);
+        }
         saveClientDb(db);
         responseData = style;
       }
@@ -870,6 +892,11 @@ export async function handleMockRequest(urlStr: string, init?: RequestInit): Pro
       if (method === 'DELETE') {
         db.garmentStyles = db.garmentStyles.filter(s => s.id !== styleId);
         saveClientDb(db);
+        if (firestoreDb) {
+          deleteDoc(doc(firestoreDb, 'garmentStyles', styleId)).catch(err => {
+            console.error("Failed to delete garment style from Firestore:", err);
+          });
+        }
         responseData = { success: true };
       }
     } 
@@ -1219,6 +1246,11 @@ export async function handleMockRequest(urlStr: string, init?: RequestInit): Pro
       const { userId } = body;
       db.allUsers = db.allUsers.filter(u => u.id !== userId);
       saveClientDb(db);
+      if (firestoreDb) {
+        deleteDoc(doc(firestoreDb, 'allUsers', userId)).catch(err => {
+          console.error("Failed to delete user from Firestore:", err);
+        });
+      }
       responseData = { success: true };
     } 
     

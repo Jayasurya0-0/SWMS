@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import { getDb, saveDb, createJob, updateJob, getJob, getCachedKpis, getCachedProductivity, initializeFirestoreDb, resetDbInMemory, getLatestUsersFromFirestore } from './src/data/dbService.js';
+import { getDb, saveDb, createJob, updateJob, getJob, getCachedKpis, getCachedProductivity, initializeFirestoreDb, resetDbInMemory, getLatestUsersFromFirestore, syncServerFromFirestoreIfNeeded } from './src/data/dbService.js';
 import { Employee, AttendanceRecord, LeaveRequest, ProductionLine, AppNotification, LineAllocationEntry } from './src/types';
 
 // Let's resolve ESM-like paths for server in TS context
@@ -14,6 +14,16 @@ const PORT = 3000;
 // Increase limit to handle bulk imports
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Pre-synchronize backend state with Firestore on incoming requests
+app.use('/api', async (req, res, next) => {
+  try {
+    await syncServerFromFirestoreIfNeeded();
+  } catch (err) {
+    console.error("API pre-sync error:", err);
+  }
+  next();
+});
 
 // Helper to write notifications
 function logNotification(type: 'Alert' | 'Leave' | 'Milestone' | 'Shortage', title: string, message: string) {

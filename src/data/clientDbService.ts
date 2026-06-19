@@ -17,7 +17,7 @@ import {
 } from './mockData';
 
 import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize client-side Firebase instance for shared cloud persistence
@@ -107,6 +107,10 @@ export function clientSha256(ascii: string): string {
 
 export function clientHashPassword(password: string): string {
   return clientSha256(password);
+}
+
+export function isSha256(str: any): boolean {
+  return typeof str === 'string' && str.length === 64 && /^[0-9a-fA-F]+$/.test(str);
 }
 
 export interface ClientDatabase {
@@ -404,35 +408,61 @@ export async function syncFromFirestoreIfNeeded() {
       try {
         const docRef = doc(firestoreDb, 'swm_shared', 'global_database');
         const docSnap = await getDoc(docRef);
+        let remoteDb: any = null;
         if (docSnap.exists()) {
-          const remoteDb = docSnap.data() as ClientDatabase;
-          if (remoteDb) {
-            // Retain local context (currentUser and theme) to avoid session kick outs
-            let localCurrentUser = null;
-            let localTheme: 'light' | 'dark' = 'light';
-            const rawLocal = localStorage.getItem('swm_client_db');
-            if (rawLocal) {
-              try {
-                const localDb = JSON.parse(rawLocal);
-                localCurrentUser = localDb.currentUser;
-                localTheme = localDb.theme || 'light';
-              } catch (e1) {
-                // ignore
+          remoteDb = docSnap.data() as ClientDatabase;
+        } else {
+          remoteDb = getInitialClientDb();
+        }
+
+        if (remoteDb) {
+          // Explicitly query and merge separate 'allUsers' collection to catch manual additions
+          try {
+            const usersColRef = collection(firestoreDb, 'allUsers');
+            const usersSnap = await getDocs(usersColRef);
+            if (!usersSnap.empty) {
+              const liveUsers: UserAccount[] = [];
+              usersSnap.forEach((uDoc: any) => {
+                const uData = uDoc.data();
+                if (uData && uData.username) {
+                  liveUsers.push(uData as UserAccount);
+                }
+              });
+              
+              if (liveUsers.length > 0) {
+                const mergedUsers = [...liveUsers];
+                // Keep any unique users from the monolithic swm_shared database that aren't yet in allUsers
+                (remoteDb.allUsers || []).forEach((u: any) => {
+                  if (!mergedUsers.some(mu => mu.id === u.id || mu.username.toLowerCase() === u.username.toLowerCase())) {
+                    mergedUsers.push(u);
+                  }
+                });
+                remoteDb.allUsers = mergedUsers;
               }
             }
-            remoteDb.currentUser = localCurrentUser;
-            remoteDb.theme = localTheme;
-
-            localStorage.setItem('swm_client_db', JSON.stringify(remoteDb));
-            lastFirestoreFetchTime = Date.now();
-            console.log("Client database synced with Firestore cloud.");
+          } catch (usersErr) {
+            console.warn("Client database sync could not retrieve separate allUsers collection:", usersErr);
           }
-        } else {
-          // Bootstrap Firestore with default database setup
-          const seeded = getInitialClientDb();
-          await setDoc(docRef, seeded);
+
+          // Retain local context (currentUser and theme) to avoid session kick outs
+          let localCurrentUser = null;
+          let localTheme: 'light' | 'dark' = 'light';
+          const rawLocal = localStorage.getItem('swm_client_db');
+          if (rawLocal) {
+            try {
+              const localDb = JSON.parse(rawLocal);
+              localCurrentUser = localDb.currentUser;
+              localTheme = localDb.theme || 'light';
+            } catch (e1) {
+              // ignore
+            }
+          }
+          remoteDb.currentUser = localCurrentUser;
+          remoteDb.theme = localTheme;
+
+          localStorage.setItem('swm_client_db', JSON.stringify(remoteDb));
           lastFirestoreFetchTime = Date.now();
-          console.log("Initialized global_database in Firestore with default seeded data.");
+          console.log("Client database successfully synced with Firestore cloud (including live allUsers mapping).");
         }
       } catch (err) {
         console.warn("Firestore data sync warning:", err);
@@ -487,6 +517,18 @@ export function saveClientDb(db: ClientDatabase) {
         .catch(err => {
           console.error("Failed to back-propagate changes to Firestore:", err);
         });
+
+      // Synchronize each user as a separate document in the discrete 'allUsers' collection
+      if (db.allUsers && Array.isArray(db.allUsers)) {
+        db.allUsers.forEach((usr: any) => {
+          if (usr && usr.id) {
+            const userDocRef = doc(firestoreDb, 'allUsers', usr.id);
+            setDoc(userDocRef, usr).catch(err => {
+              console.error(`Failed to propagate user ${usr.username} to separate 'allUsers' collection:`, err);
+            });
+          }
+        });
+      }
     }
   }
 }
@@ -961,14 +1003,20 @@ export async function handleMockRequest(urlStr: string, init?: RequestInit): Pro
         } else {
           // Compare hashes
           const inputHash = clientHashPassword(password || '');
-          if (user.passwordHash !== inputHash) {
+          const isPlainPasswordMatch = typeof user.passwordHash === 'string' && !isSha256(user.passwordHash) && user.passwordHash === password;
+          const isMatch = (user.passwordHash === inputHash) || isPlainPasswordMatch;
+
+          if (!isMatch) {
             user.failedAttempts = (user.failedAttempts || 0) + 1;
             status = 401;
             responseData = { error: `Incorrect security password. ${5 - user.failedAttempts} attempt(s) remaining.` };
             writeClientAuditLog(db, user.id, 'Failed Login Attempt', 'System', `Password match failed. IP: Mock-Sandbox.`);
             saveClientDb(db);
           } else {
-            // Success
+            // Success - if logged in with plain text password (e.g. manually set in Firebase board), upgrade now
+            if (isPlainPasswordMatch) {
+              user.passwordHash = inputHash;
+            }
             user.failedAttempts = 0;
             user.lastLogin = now.toISOString();
             

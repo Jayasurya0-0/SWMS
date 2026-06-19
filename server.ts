@@ -1229,6 +1229,10 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ user: sessionData.user, session: sessionData.session });
 });
 
+function isSha256(str: any): boolean {
+  return typeof str === 'string' && str.length === 64 && /^[0-9a-fA-F]+$/.test(str);
+}
+
 app.post('/api/auth/login', async (req, res) => {
   const { usernameOrEmpId, password } = req.body;
   if (!usernameOrEmpId || !password) {
@@ -1263,7 +1267,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (user.lockedUntil) {
     const lockedTime = new Date(user.lockedUntil);
     if (lockedTime > now) {
-      const minutesLeft = Math.ceil((lockedTime.getTime() - now.getTime()) / 60000);
+       const minutesLeft = Math.ceil((lockedTime.getTime() - now.getTime()) / 60000);
       return res.status(403).json({ 
         error: `Account locked out due to multiple failed logins. Try again in ${minutesLeft} minutes.` 
       });
@@ -1280,7 +1284,10 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   const typedPasswordHash = hashPassword(password);
-  if (user.passwordHash !== typedPasswordHash) {
+  const isPlainPasswordMatch = typeof user.passwordHash === 'string' && !isSha256(user.passwordHash) && user.passwordHash === password;
+  const isMatch = (user.passwordHash === typedPasswordHash) || isPlainPasswordMatch;
+
+  if (!isMatch) {
     user.failedAttempts = (user.failedAttempts || 0) + 1;
     let errorMsg = 'Incorrect temporary or master security password.';
     
@@ -1298,7 +1305,10 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(401).json({ error: errorMsg });
   }
 
-  // Successful login
+  // Successful login - if they logged in with a plain password (e.g. manually set in Firebase board), upgrade it now!
+  if (isPlainPasswordMatch) {
+    user.passwordHash = typedPasswordHash;
+  }
   user.failedAttempts = 0;
   user.lockedUntil = null;
   user.lastLogin = now.toISOString();
